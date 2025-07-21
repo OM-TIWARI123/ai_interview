@@ -406,6 +406,7 @@ def question_generator(state: InterviewState):
     print(f"✅ Generated {len(questions)} questions")
     
     return {
+        **state,
         "questions_queue": questions,
         "interview_phase": "questioning"
     }

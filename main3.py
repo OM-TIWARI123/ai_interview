@@ -189,7 +189,7 @@ def main():
             
             with sr.Microphone() as source:
                 print("🎤 Calibrating microphone...")
-                r.adjust_for_ambient_noise(source, duration=2)
+                r.adjust_for_ambient_noise(source, duration=5)
                 print("✅ Microphone calibrated!")
                 
                 # Process initial phases (resume processing, introduction, question generation)
@@ -260,4 +260,4 @@ def main():
         print("\n👋 Goodbye!")
 
 if __name__ == "__main__":
-    main()
+    main()   

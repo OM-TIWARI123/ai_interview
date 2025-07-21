@@ -1,51 +1,76 @@
+import os, asyncio, keyboard, speech_recognition as sr, threading, time
+from pathlib import Path
 from dotenv import load_dotenv
-import speech_recognition as sr
-from langgraph.checkpoint.mongodb import MongoDBSaver
-from graph import create_chat_graph
-from google import genai
-from google.genai import types
-import wave # You'll need to install PyAudio
-from typing import IO
-from io import BytesIO
-from elevenlabs import VoiceSettings
-from elevenlabs.client import ElevenLabs
-import os
+from graph import create_graph, resume_processor, ask_question, eval_answer
+
 load_dotenv()
 
-client = genai.Client(api_key="GOOGLE_API_KEY")
+rec = sr.Recognizer()
+mic = sr.Microphone()
 
-MONGODB_URI = "mongodb://admin:admin@localhost:27017"
-config = {"configurable": {"thread_id": "7"}}
+def listen_once():
+    """Blocking helper: push-to-talk via ENTER."""
+    print("\n🔴 Recording … press ENTER to start, ENTER again to stop.")
+    keyboard.wait('enter')          # start recording
+    print("🎙️  Recording … press ENTER to stop.")
+    with mic as source:
+        rec.adjust_for_ambient_noise(source, duration=1)
+        try:
+            audio = rec.listen(source, timeout=None)
+        except sr.WaitTimeoutError:
+            return None
+    keyboard.wait('enter')  # wait for second ENTER to stop
+    print("⏹️  Stopped.")
+    try:
+        text = rec.recognize_google(audio)
+        return text
+    except sr.UnknownValueError:
+        return ""
+    except Exception as e:
+        print(f"Error: {e}")
+        return ""
 
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-elevenlabs = ElevenLabs(
-    api_key=ELEVENLABS_API_KEY,
-)
+async def main():
+    resume_path = input("📄 Resume path (PDF/DOCX/TXT): ").strip()
+    roles = ["SDE", "Data Scientist", "Product Manager"]
+    for i, r in enumerate(roles, 1):
+        print(f"{i}. {r}")
+    role = roles[int(input("🎯 Select role (1-3): ").strip()) - 1]
 
+    # ---- 1. Resume ingest (blocking) ----
+    state = {"resume_path": resume_path, "role": role}
+    state.update(resume_processor(state))
 
+    # ---- 2. Introduction ----
+    intro = state["intro"]
+    print("\n🎤", intro)
+    await state["speak"](intro)
 
-def main():
-    with MongoDBSaver.from_conn_string(MONGODB_URI) as checkpointer:
-        graph = create_chat_graph(checkpointer=checkpointer)
-        r=sr.Recognizer()
+    # ---- 3. User intro ----
+    user_intro = listen_once()
+    print(f"👤 You said: {user_intro or 'No answer'}")
+    state["last_q"] = "Please introduce yourself"
+    result = eval_answer(state, user_intro or "No answer")
+    print(f"🤖 Feedback: {result}")
+    state["history"].append(result)
 
-        with sr.Microphone() as source:
-            r.adjust_for_ambient_noise(source)
-            r.pause_threshold=2
-            while True:
-                print("say something")
-                audio=r.listen(source)
+    # ---- 4. Questions ----
+    for q in state["questions"]:
+        print(f"\n🎤 {q}")
+        await state["speak"](q)
+        state["last_q"] = q
+        answer = listen_once()
+        print(f"👤 You said: {answer or 'No answer'}")
+        result = eval_answer(state, answer or "No answer")
+        print(f"🤖 Feedback: {result}")
+        state["history"].append(result)
 
-                print("processing audio...")
-                sst=r.recognize_google(audio)
+    print("\n✅ Interview complete")
+    for h in state["history"]:
+        print(h)
 
-                print("you said: ",sst)
-
-                for event in graph.stream({"messages":[{"role":"user","content":sst}]},config,stream_mode="values"):
-
-                    if "messages" in event:
-                        print("last message :",event["messages"][-1].content)
-                        
-                        event["messages"][-1].pretty_print()
-                
-main()
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 bye")
