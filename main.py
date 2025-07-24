@@ -1,4 +1,4 @@
-import os, asyncio, keyboard, speech_recognition as sr, threading, time
+import os, asyncio, keyboard, speech_recognition as sr
 from pathlib import Path
 from dotenv import load_dotenv
 from graph import create_graph, resume_processor, ask_question, eval_answer
@@ -53,9 +53,15 @@ async def main():
     result = eval_answer(state, user_intro or "No answer")
     print(f"🤖 Feedback: {result}")
     state["history"].append(result)
+    
+    # Speak interactive feedback after introduction
+    intro_feedback = "Thank you for that introduction. Now let's dive into some technical questions."
+    print(f"🎤 {intro_feedback}")
+    await state["speak"](intro_feedback)
 
     # ---- 4. Questions ----
-    for q in state["questions"]:
+    total_questions = len(state["questions"])
+    for i, q in enumerate(state["questions"], 1):
         print(f"\n🎤 {q}")
         await state["speak"](q)
         state["last_q"] = q
@@ -64,6 +70,31 @@ async def main():
         result = eval_answer(state, answer or "No answer")
         print(f"🤖 Feedback: {result}")
         state["history"].append(result)
+        
+        # Speak interactive transition based on question number
+        if i < total_questions:
+            if i == 1:
+                transition = "Great! Let's move on to the next question."
+            elif i == 2:
+                transition = "Excellent. Here's another question for you."
+            elif i == 3:
+                transition = "Good answer. Let's continue with the next one."
+            else:
+                transition = "Alright, let's proceed to the next question."
+        else:
+            transition = "Perfect! That concludes our interview questions."
+        
+        print(f"🎤 {transition}")
+        await state["speak"](transition)
+        
+        # Small pause between questions for natural flow
+        if i < total_questions:
+            await asyncio.sleep(1)
+
+    # ---- 5. Closing ----
+    closing = "Thank you for taking the time to interview with us today. We'll be in touch soon with next steps."
+    print(f"\n🎤 {closing}")
+    await state["speak"](closing)
 
     print("\n✅ Interview complete")
     for h in state["history"]:
